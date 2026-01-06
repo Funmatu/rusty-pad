@@ -19,7 +19,7 @@ def status():
 
 
 # ----------------------------------------------------------------
-# API: Calculation (Optional fallback, but WASM is preferred)
+# API: Calculation
 # ----------------------------------------------------------------
 @app.route("/api/calculate", method="POST")
 def handle_calculate():
@@ -33,19 +33,16 @@ def handle_calculate():
 
 
 # ----------------------------------------------------------------
-# API: File I/O (Streaming for Native)
+# API: File I/O
 # ----------------------------------------------------------------
 @app.route("/api/open_file", method="POST")
 def open_file():
     file_types = ("Text Files (*.txt;*.md;*.json;*.rs;*.py)", "All files (*.*)")
-    # create_file_dialog はメインスレッドで呼ばれる必要があるため、
-    # 実際の運用ではウィンドウインスタンスの管理が必要だが、ここでは簡易実装
     try:
         file_path = webview.windows[0].create_file_dialog(
             webview.OPEN_DIALOG, file_types=file_types
         )
     except:
-        # ウィンドウが特定できない場合などのフォールバック
         return {"error": "Dialog unavailable"}
 
     if not file_path:
@@ -90,6 +87,93 @@ def index():
 @app.route("/<filepath:path>")
 def server_static(filepath):
     return static_file(filepath, root=WWW_DIR)
+
+
+# ----------------------------------------------------------------
+# API: Advanced Native Features (Search & Save)
+# ----------------------------------------------------------------
+@app.route("/api/search_next", method="POST")
+def handle_search_next():
+    data = request.json
+    path = data.get("filepath")
+    query = data.get("query")
+    start_line = data.get("start_line", 0)
+
+    if not query:
+        return {"error": "Query is empty"}
+    try:
+        found_line = rusty_pad.search_next(path, query, start_line)
+        if found_line is not None:
+            # 見つかったら、その行が見えるようにチャンクを読み込んで返す
+            display_start = max(0, found_line - 50)
+            content = rusty_pad.read_file_chunk(path, display_start, 100)
+            return {
+                "found": True,
+                "line": found_line,
+                "display_start": display_start,
+                "content": content,
+            }
+        else:
+            return {"found": False}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.route("/api/search_prev", method="POST")
+def handle_search_prev():
+    data = request.json
+    path = data.get("filepath")
+    query = data.get("query")
+    start_line = data.get("start_line", 0)
+
+    if not query:
+        return {"error": "Query is empty"}
+    try:
+        found_line = rusty_pad.search_prev(path, query, start_line)
+        if found_line is not None:
+            display_start = max(0, found_line - 50)
+            content = rusty_pad.read_file_chunk(path, display_start, 100)
+            return {
+                "found": True,
+                "line": found_line,
+                "display_start": display_start,
+                "content": content,
+            }
+        else:
+            return {"found": False}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ✅ 修正: 範囲指定保存 (開始行・終了行を指定)
+@app.route("/api/save_range", method="POST")
+def handle_save_range():
+    data = request.json
+    src_path = data.get("filepath")
+
+    # 0-indexed で受け取る想定だが、UI入力の解釈はJS側で行う
+    start_line = data.get("start_line")
+    end_line = data.get("end_line")
+
+    file_types = ("Text Files (*.txt)", "All files (*.*)")
+    dest_path_obj = webview.windows[0].create_file_dialog(
+        webview.SAVE_DIALOG, file_types=file_types, save_filename="extracted.txt"
+    )
+
+    if not dest_path_obj:
+        return {"cancelled": True}
+
+    if isinstance(dest_path_obj, (tuple, list)):
+        dest_path = dest_path_obj[0]
+    else:
+        dest_path = str(dest_path_obj)
+
+    try:
+        # start_line, end_line をそのままRustへ
+        count = rusty_pad.save_range(src_path, dest_path, start_line, end_line)
+        return {"saved": True, "lines_written": count, "path": dest_path}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def start_server():

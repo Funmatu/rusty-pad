@@ -1,14 +1,11 @@
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Write};
 use std::fs::File;
-
-// 共通の計算ロジック
 use fend_core;
 
 // -----------------------------------------------------------------------------
 // Core Logic: Pure Rust
 // -----------------------------------------------------------------------------
 
-/// 文字列の統計情報を計算する (テスト & リアルタイム入力用)
 fn core_text_stats(text: &str) -> (usize, usize, usize) {
     let chars = text.chars().count();
     let words = text.split_whitespace().count();
@@ -16,8 +13,6 @@ fn core_text_stats(text: &str) -> (usize, usize, usize) {
     (chars, words, lines)
 }
 
-/// ファイルパスを受け取り、行数・単語数・文字数をストリーミングでカウントする。
-/// メモリ消費量はバッファサイズ（数KB）に限定される。
 fn core_stream_stats(path: &str) -> Result<(usize, usize, usize), String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let reader = io::BufReader::new(file);
@@ -29,7 +24,6 @@ fn core_stream_stats(path: &str) -> Result<(usize, usize, usize), String> {
     for line in reader.lines() {
         let line = line.map_err(|e| e.to_string())?;
         lines += 1;
-        // 改行文字分(+1)を考慮するかは仕様によるが、ここでは簡易的に char数 + 1 とする
         chars += line.chars().count() + 1; 
         words += line.split_whitespace().count();
     }
@@ -37,7 +31,6 @@ fn core_stream_stats(path: &str) -> Result<(usize, usize, usize), String> {
     Ok((chars, words, lines))
 }
 
-/// 指定された行範囲（start_line から num_lines 分）だけを読み込む。
 fn core_read_lines(path: &str, start_line: usize, num_lines: usize) -> Result<String, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let reader = io::BufReader::new(file);
@@ -64,7 +57,75 @@ fn core_read_lines(path: &str, start_line: usize, num_lines: usize) -> Result<St
 }
 
 // -----------------------------------------------------------------------------
-// Module: Python Interface (PyO3)
+// Search Features
+// -----------------------------------------------------------------------------
+
+fn core_search_next(path: &str, query: &str, start_line: usize) -> Result<Option<usize>, String> {
+    let file = File::open(path).map_err(|e| e.to_string())?;
+    let reader = io::BufReader::new(file);
+
+    for (index, line) in reader.lines().enumerate() {
+        if index < start_line { continue; }
+        
+        let line = line.map_err(|e| e.to_string())?;
+        if line.contains(query) {
+            return Ok(Some(index));
+        }
+    }
+    Ok(None)
+}
+
+fn core_search_prev(path: &str, query: &str, start_line: usize) -> Result<Option<usize>, String> {
+    let file = File::open(path).map_err(|e| e.to_string())?;
+    let reader = io::BufReader::new(file);
+
+    let mut last_match: Option<usize> = None;
+
+    for (index, line) in reader.lines().enumerate() {
+        if index >= start_line {
+            break;
+        }
+
+        let line = line.map_err(|e| e.to_string())?;
+        if line.contains(query) {
+            last_match = Some(index);
+        }
+    }
+
+    Ok(last_match)
+}
+
+// ✅ 修正: 開始行(start_line)と終了行(end_line)を直接受け取る仕様に変更
+// end_lineは「そこまで含める」のではなく「ここまで来たら終了(Exclusive)」とするのが一般的だが、
+// 呼び出し元で調整済みとする。ここでは `index >= end_line` でbreakする。
+fn core_save_range(src_path: &str, dest_path: &str, start_line: usize, end_line: usize) -> Result<usize, String> {
+    let src_file = File::open(src_path).map_err(|e| e.to_string())?;
+    let reader = io::BufReader::new(src_file);
+    
+    let dest_file = File::create(dest_path).map_err(|e| e.to_string())?;
+    let mut writer = io::BufWriter::new(dest_file);
+    
+    let mut lines_written = 0;
+
+    for (index, line) in reader.lines().enumerate() {
+        // end_lineに達したら終了
+        if index >= end_line {
+            break;
+        }
+        
+        if index >= start_line {
+            let line = line.map_err(|e| e.to_string())?;
+            writeln!(writer, "{}", line).map_err(|e| e.to_string())?;
+            lines_written += 1;
+        }
+    }
+    
+    writer.flush().map_err(|e| e.to_string())?;
+    Ok(lines_written)
+}
+
+// -----------------------------------------------------------------------------
+// Python Interface (PyO3)
 // -----------------------------------------------------------------------------
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -79,14 +140,12 @@ fn calculate(expression: String) -> PyResult<String> {
     }
 }
 
-// Pythonから文字列を直接渡して統計を取る関数
 #[cfg(feature = "python")]
 #[pyfunction]
 fn get_text_stats(text: String) -> PyResult<(usize, usize, usize)> {
     Ok(core_text_stats(&text))
 }
 
-// ファイルパスを渡して統計を取る関数 (巨大ファイル用)
 #[cfg(feature = "python")]
 #[pyfunction]
 fn get_file_stats(path: String) -> PyResult<(usize, usize, usize)> {
@@ -100,17 +159,39 @@ fn read_file_chunk(path: String, start_line: usize, num_lines: usize) -> PyResul
 }
 
 #[cfg(feature = "python")]
+#[pyfunction]
+fn search_next(path: String, query: String, start_line: usize) -> PyResult<Option<usize>> {
+    core_search_next(&path, &query, start_line).map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e))
+}
+
+#[cfg(feature = "python")]
+#[pyfunction]
+fn search_prev(path: String, query: String, start_line: usize) -> PyResult<Option<usize>> {
+    core_search_prev(&path, &query, start_line).map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e))
+}
+
+// ✅ 修正: 引数を start_line, end_line に変更
+#[cfg(feature = "python")]
+#[pyfunction]
+fn save_range(src_path: String, dest_path: String, start_line: usize, end_line: usize) -> PyResult<usize> {
+    core_save_range(&src_path, &dest_path, start_line, end_line).map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e))
+}
+
+#[cfg(feature = "python")]
 #[pymodule]
 fn rusty_pad(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(calculate, m)?)?;
-    m.add_function(wrap_pyfunction!(get_text_stats, m)?)?; // 復活
+    m.add_function(wrap_pyfunction!(get_text_stats, m)?)?;
     m.add_function(wrap_pyfunction!(get_file_stats, m)?)?;
     m.add_function(wrap_pyfunction!(read_file_chunk, m)?)?;
+    m.add_function(wrap_pyfunction!(search_next, m)?)?;
+    m.add_function(wrap_pyfunction!(search_prev, m)?)?;
+    m.add_function(wrap_pyfunction!(save_range, m)?)?;
     Ok(())
 }
 
 // -----------------------------------------------------------------------------
-// Module: WebAssembly Interface (wasm-bindgen)
+// WebAssembly Interface (wasm-bindgen)
 // -----------------------------------------------------------------------------
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
@@ -144,7 +225,6 @@ pub struct TextStats {
     pub lines: usize,
 }
 
-// WASM用にも core_text_stats を利用する
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
 pub fn wasm_text_stats(text: &str) -> TextStats {
