@@ -1,0 +1,15 @@
+{
+  "name": "rusty-pad",
+  "type": "module",
+  "version": "0.2.0",
+  "files": [
+    "rusty_pad_bg.wasm",
+    "rusty_pad.js",
+    "rusty_pad.d.ts"
+  ],
+  "main": "rusty_pad.js",
+  "types": "rusty_pad.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
