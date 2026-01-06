@@ -30,18 +30,21 @@
         }
         #workspace {
             display: grid;
-            grid-template-columns: 1fr 320px;
+            grid-template-columns: 1fr 320px; /* Notepad takes remaining space, Calc takes 320px */
             gap: 20px;
             flex-grow: 1;
             height: 100%;
+            overflow: hidden; /* Prevent full page scroll */
         }
-        /* Notepad Section */
+
+        /* --- Notepad Section --- */
         .notepad-container {
             display: flex;
             flex-direction: column;
             border: var(--win-border);
             background: white;
             box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+            height: 100%;
         }
         .toolbar {
             padding: 5px;
@@ -54,7 +57,7 @@
             flex-grow: 1;
             border: none;
             padding: 10px;
-            font-family: 'Consolas', 'Monaco', monospace; /* Fixed width for better data view */
+            font-family: 'Consolas', 'Monaco', monospace;
             font-size: 14px;
             resize: none;
             outline: none;
@@ -68,16 +71,19 @@
             text-align: right;
         }
 
-        /* Calculator Section */
+        /* --- Calculator Section --- */
         .calculator-container {
             border: var(--win-border);
-            background: #d4d0c8; /* Classic Windows Color */
+            background: #d4d0c8;
             padding: 10px;
             display: flex;
             flex-direction: column;
             box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-            max-height: 500px;
+            height: 100%; /* Fill the workspace grid cell */
+            box-sizing: border-box;
         }
+        
+        /* Display */
         #calc-display {
             background: white;
             border: 1px solid #888;
@@ -89,26 +95,84 @@
             font-family: monospace;
             overflow: hidden;
             white-space: nowrap;
+            box-sizing: border-box;
+            width: 100%;
         }
+
+        /* Buttons Grid */
         .calc-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 5px;
-            flex-grow: 1;
+            flex-grow: 0; /* Don't stretch indefinitely */
+            margin-bottom: 10px;
         }
         button {
-            padding: 15px;
+            padding: 15px 0; /* Adjusted padding */
             font-size: 1.1rem;
             border: 1px solid #888;
             background: var(--btn-face);
             cursor: pointer;
             transition: background 0.1s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         button:active { background: #bbb; }
         button.operator { background: #e6e6e6; font-weight: bold; }
         button.equals { background: #0078d7; color: white; border-color: #005a9e; }
         button.func { font-size: 0.9rem; background: #ddd; }
-        
+
+        /* --- Console Section (New) --- */
+        .console-container {
+            flex-grow: 1; /* Take remaining vertical space */
+            border-top: 2px solid #999;
+            padding-top: 10px;
+            background: #2d2d2d;
+            color: #eee;
+            font-family: 'Consolas', monospace;
+            display: flex;
+            flex-direction: column;
+            min-height: 150px;
+            border-radius: 0 0 4px 4px;
+        }
+        .console-header {
+            font-size: 0.8rem;
+            color: #aaa;
+            padding: 0 10px 5px 10px;
+            border-bottom: 1px solid #444;
+            margin-bottom: 5px;
+        }
+        #console-history {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 5px 10px;
+            font-size: 0.9rem;
+            max-height: 300px;
+        }
+        .log-entry { margin-bottom: 4px; word-wrap: break-word; }
+        .log-entry.user { color: #88c0d0; }
+        .log-entry.result { color: #a3be8c; font-weight: bold; margin-bottom: 10px;}
+        .log-entry.error { color: #bf616a; }
+        .log-entry.system { color: #666; font-style: italic; }
+
+        .console-input-line {
+            display: flex;
+            padding: 5px 10px 10px 10px;
+            background: #333;
+            align-items: center;
+        }
+        .prompt { color: #ebcb8b; margin-right: 8px; font-weight: bold; }
+        #console-input {
+            flex-grow: 1;
+            background: transparent;
+            border: none;
+            color: white;
+            font-family: inherit;
+            font-size: 1rem;
+            outline: none;
+        }
+
         /* Utility */
         .loading { opacity: 0.5; pointer-events: none; }
     </style>
@@ -131,6 +195,7 @@
 
         <div class="calculator-container">
             <input type="text" id="calc-display" readonly value="Ready">
+            
             <div class="calc-grid">
                 <button class="func" onclick="append('(')">(</button>
                 <button class="func" onclick="append(')')">)</button>
@@ -161,6 +226,17 @@
                 <button onclick="append('.')">.</button>
                 <button onclick="backspace()">←</button>
                 <button class="equals" onclick="compute()">=</button>
+            </div>
+
+            <div class="console-container">
+                <div class="console-header">Engineer's Console (fend-core)</div>
+                <div id="console-history">
+                    <div class="log-entry system">Rusty Session Initialized. Try "x = 10" or "1 km to m".</div>
+                </div>
+                <div class="console-input-line">
+                    <span class="prompt">&gt;</span>
+                    <input type="text" id="console-input" placeholder="Type expression..." autocomplete="off">
+                </div>
             </div>
         </div>
     </div>
