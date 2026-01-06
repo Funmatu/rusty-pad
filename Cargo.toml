@@ -1,12 +1,7 @@
 [package]
 name = "rusty-pad"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-authors = ["Efficiency Enthusiast funmatu@gmail.com"]
-description = "A lightweight, memory-conscious notepad and calculator powered by Rust/WASM."
-
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false
 
 [lib]
 name = "rusty_pad"
@@ -14,21 +9,21 @@ crate-type = ["cdylib"]
 
 [features]
 default = ["wasm"]
-wasm = ["dep:wasm-bindgen"]
+wasm = ["dep:wasm-bindgen", "dep:web-sys", "dep:js-sys", "dep:wasm-bindgen-futures"]
 python = ["dep:pyo3"]
 
 [dependencies]
-# 数式評価用ライブラリ
 fend-core = "1.5"
 
-# Feature: WebAssembly
-wasm-bindgen = { version = "0.2", optional = true }
-
-# Feature: Python
+# --- Python用 ---
 pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
+
+# --- WASM用 (非同期ストリーム処理のため) ---
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", features = ["File", "Blob", "ReadableStream", "console"], optional = true }
+js-sys = { version = "0.3", optional = true }
 
 [profile.release]
 lto = true
-opt-level = "z"  # バイナリサイズを最小化 (Webロード時間を短縮)
-codegen-units = 1
-strip = true
+opt-level = 3

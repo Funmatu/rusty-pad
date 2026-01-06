@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rusty Pad</title>
     <style>
+        /* (スタイルは前回と同じなので省略なしでそのまま使えます) */
         :root {
             --bg-color: #f0f0f0;
             --win-border: 1px solid #999;
@@ -30,14 +31,13 @@
         }
         #workspace {
             display: grid;
-            grid-template-columns: 1fr 320px; /* Notepad takes remaining space, Calc takes 320px */
+            grid-template-columns: 1fr 320px;
             gap: 20px;
             flex-grow: 1;
             height: 100%;
-            overflow: hidden; /* Prevent full page scroll */
+            overflow: hidden;
         }
-
-        /* --- Notepad Section --- */
+        /* Notepad */
         .notepad-container {
             display: flex;
             flex-direction: column;
@@ -70,8 +70,7 @@
             color: #555;
             text-align: right;
         }
-
-        /* --- Calculator Section --- */
+        /* Calculator */
         .calculator-container {
             border: var(--win-border);
             background: #d4d0c8;
@@ -79,11 +78,9 @@
             display: flex;
             flex-direction: column;
             box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-            height: 100%; /* Fill the workspace grid cell */
+            height: 100%;
             box-sizing: border-box;
         }
-        
-        /* Display */
         #calc-display {
             background: white;
             border: 1px solid #888;
@@ -98,17 +95,15 @@
             box-sizing: border-box;
             width: 100%;
         }
-
-        /* Buttons Grid */
         .calc-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 5px;
-            flex-grow: 0; /* Don't stretch indefinitely */
+            flex-grow: 0;
             margin-bottom: 10px;
         }
         button {
-            padding: 15px 0; /* Adjusted padding */
+            padding: 15px 0;
             font-size: 1.1rem;
             border: 1px solid #888;
             background: var(--btn-face);
@@ -122,10 +117,16 @@
         button.operator { background: #e6e6e6; font-weight: bold; }
         button.equals { background: #0078d7; color: white; border-color: #005a9e; }
         button.func { font-size: 0.9rem; background: #ddd; }
+        
+        .toolbar button {
+            padding: 5px 10px;
+            font-size: 0.9rem;
+            border: 1px solid #999;
+        }
 
-        /* --- Console Section (New) --- */
+        /* Console */
         .console-container {
-            flex-grow: 1; /* Take remaining vertical space */
+            flex-grow: 1;
             border-top: 2px solid #999;
             padding-top: 10px;
             background: #2d2d2d;
@@ -172,66 +173,60 @@
             font-size: 1rem;
             outline: none;
         }
-
-        /* Utility */
-        .loading { opacity: 0.5; pointer-events: none; }
     </style>
 </head>
 <body>
     <header>
-        <span><strong>Rusty Pad</strong> - Powered by Rust & WASM</span>
-        <span id="version-info">v1.0.0</span>
+        <span><strong>Rusty Pad</strong> - Universal (Web + Native)</span>
+        <span id="version-info">v2.1.0</span>
     </header>
 
     <div id="workspace">
         <div class="notepad-container">
             <div class="toolbar">
-                <button onclick="saveFile()" style="padding: 5px 10px; font-size: 0.9rem;">Save (.txt)</button>
-                <button onclick="clearPad()" style="padding: 5px 10px; font-size: 0.9rem;">Clear</button>
+                <button onclick="saveFile()">Save (.txt)</button>
+                <button onclick="openSmartFile()">Open File</button>
+                <button onclick="loadNextChunk()" id="btn-load-more" style="display:none">Load More</button>
+                <button onclick="clearPad()">Clear</button>
+                
+                <input type="file" id="web-file-input" style="display:none">
             </div>
-            <textarea id="notepad" placeholder="Type here... (Rust monitors your stats)" spellcheck="false"></textarea>
-            <div class="statusbar" id="status-bar">Loading Rust Core...</div>
+            <textarea id="notepad" placeholder="Type here... (WASM monitors your stats)" spellcheck="false"></textarea>
+            <div class="statusbar" id="status-bar">Initializing...</div>
         </div>
 
         <div class="calculator-container">
             <input type="text" id="calc-display" readonly value="Ready">
-            
             <div class="calc-grid">
                 <button class="func" onclick="append('(')">(</button>
                 <button class="func" onclick="append(')')">)</button>
                 <button class="func" onclick="append('sqrt(')">√</button>
                 <button class="operator" onclick="clearCalc()">C</button>
-
                 <button class="func" onclick="append('sin(')">sin</button>
                 <button class="func" onclick="append('cos(')">cos</button>
                 <button class="func" onclick="append('abs(')">abs</button>
                 <button class="operator" onclick="append('/')">÷</button>
-
                 <button onclick="append('7')">7</button>
                 <button onclick="append('8')">8</button>
                 <button onclick="append('9')">9</button>
                 <button class="operator" onclick="append('*')">×</button>
-
                 <button onclick="append('4')">4</button>
                 <button onclick="append('5')">5</button>
                 <button onclick="append('6')">6</button>
                 <button class="operator" onclick="append('-')">-</button>
-
                 <button onclick="append('1')">1</button>
                 <button onclick="append('2')">2</button>
                 <button onclick="append('3')">3</button>
                 <button class="operator" onclick="append('+')">+</button>
-
                 <button onclick="append('0')">0</button>
                 <button onclick="append('.')">.</button>
                 <button onclick="backspace()">←</button>
                 <button class="equals" onclick="compute()">=</button>
             </div>
-
             <div class="console-container">
-                <div class="console-header">Engineer's Console (fend-core)</div>
+                <div class="console-header">Engineer's Console (WASM Core)</div>
                 <div id="console-history">
-                    <div class="log-entry system">Rusty Session Initialized. Try "x = 10" or "1 km to m".</div>
+                    <div class="log-entry system">Initializing WASM Runtime...</div>
                 </div>
                 <div class="console-input-line">
                     <span class="prompt">&gt;</span>
@@ -243,7 +238,7 @@
 
     <script type="module" src="./index.js"></script>
     <script>
-        // Global helper for buttons (module scope workaround)
+        // Global helpers
         window.append = (val) => {
             const disp = document.getElementById('calc-display');
             if (disp.value === 'Ready' || disp.value.startsWith('Error')) disp.value = '';
