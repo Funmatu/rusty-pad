@@ -3,28 +3,181 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>nx-compute-rs Demo</title>
+    <title>Rusty Pad</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
-        h1 { border-bottom: 2px solid #eee; padding-bottom: 0.5rem; }
-        .card { border: 1px solid #ddd; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        button { background-color: #0070f3; color: white; border: none; padding: 0.8rem 1.5rem; border-radius: 5px; cursor: pointer; font-size: 1rem; }
-        button:hover { background-color: #005bb5; }
-        button:disabled { background-color: #ccc; cursor: not-allowed; }
-        #output { margin-top: 1rem; padding: 1rem; background: #f5f5f5; border-radius: 5px; font-family: monospace; }
+        :root {
+            --bg-color: #f0f0f0;
+            --win-border: 1px solid #999;
+            --btn-face: #e0e0e0;
+            --text-color: #333;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+        }
+        #workspace {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 20px;
+            flex-grow: 1;
+            height: 100%;
+        }
+        /* Notepad Section */
+        .notepad-container {
+            display: flex;
+            flex-direction: column;
+            border: var(--win-border);
+            background: white;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        }
+        .toolbar {
+            padding: 5px;
+            background: #eee;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+        }
+        textarea {
+            flex-grow: 1;
+            border: none;
+            padding: 10px;
+            font-family: 'Consolas', 'Monaco', monospace; /* Fixed width for better data view */
+            font-size: 14px;
+            resize: none;
+            outline: none;
+        }
+        .statusbar {
+            padding: 4px 10px;
+            background: #eee;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #555;
+            text-align: right;
+        }
+
+        /* Calculator Section */
+        .calculator-container {
+            border: var(--win-border);
+            background: #d4d0c8; /* Classic Windows Color */
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+            max-height: 500px;
+        }
+        #calc-display {
+            background: white;
+            border: 1px solid #888;
+            height: 50px;
+            margin-bottom: 10px;
+            text-align: right;
+            padding: 10px;
+            font-size: 1.5rem;
+            font-family: monospace;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        .calc-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+            flex-grow: 1;
+        }
+        button {
+            padding: 15px;
+            font-size: 1.1rem;
+            border: 1px solid #888;
+            background: var(--btn-face);
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        button:active { background: #bbb; }
+        button.operator { background: #e6e6e6; font-weight: bold; }
+        button.equals { background: #0078d7; color: white; border-color: #005a9e; }
+        button.func { font-size: 0.9rem; background: #ddd; }
+        
+        /* Utility */
+        .loading { opacity: 0.5; pointer-events: none; }
     </style>
 </head>
 <body>
-    <h1>nx-compute-rs</h1>
-    <p>R&D Dual-Runtime Architecture Proof of Concept.</p>
-    
-    <div class="card">
-        <h3>WebAssembly Computation</h3>
-        <p>Run the rigorous Rust backend directly in your browser.</p>
-        <button id="run-btn" disabled>Loading WASM...</button>
-        <div id="output">Waiting for input...</div>
+    <header>
+        <span><strong>Rusty Pad</strong> - Powered by Rust & WASM</span>
+        <span id="version-info">v1.0.0</span>
+    </header>
+
+    <div id="workspace">
+        <div class="notepad-container">
+            <div class="toolbar">
+                <button onclick="saveFile()" style="padding: 5px 10px; font-size: 0.9rem;">Save (.txt)</button>
+                <button onclick="clearPad()" style="padding: 5px 10px; font-size: 0.9rem;">Clear</button>
+            </div>
+            <textarea id="notepad" placeholder="Type here... (Rust monitors your stats)" spellcheck="false"></textarea>
+            <div class="statusbar" id="status-bar">Loading Rust Core...</div>
+        </div>
+
+        <div class="calculator-container">
+            <input type="text" id="calc-display" readonly value="Ready">
+            <div class="calc-grid">
+                <button class="func" onclick="append('(')">(</button>
+                <button class="func" onclick="append(')')">)</button>
+                <button class="func" onclick="append('sqrt(')">√</button>
+                <button class="operator" onclick="clearCalc()">C</button>
+
+                <button class="func" onclick="append('sin(')">sin</button>
+                <button class="func" onclick="append('cos(')">cos</button>
+                <button class="func" onclick="append('abs(')">abs</button>
+                <button class="operator" onclick="append('/')">÷</button>
+
+                <button onclick="append('7')">7</button>
+                <button onclick="append('8')">8</button>
+                <button onclick="append('9')">9</button>
+                <button class="operator" onclick="append('*')">×</button>
+
+                <button onclick="append('4')">4</button>
+                <button onclick="append('5')">5</button>
+                <button onclick="append('6')">6</button>
+                <button class="operator" onclick="append('-')">-</button>
+
+                <button onclick="append('1')">1</button>
+                <button onclick="append('2')">2</button>
+                <button onclick="append('3')">3</button>
+                <button class="operator" onclick="append('+')">+</button>
+
+                <button onclick="append('0')">0</button>
+                <button onclick="append('.')">.</button>
+                <button onclick="backspace()">←</button>
+                <button class="equals" onclick="compute()">=</button>
+            </div>
+        </div>
     </div>
 
     <script type="module" src="./index.js"></script>
+    <script>
+        // Global helper for buttons (module scope workaround)
+        window.append = (val) => {
+            const disp = document.getElementById('calc-display');
+            if (disp.value === 'Ready' || disp.value.startsWith('Error')) disp.value = '';
+            disp.value += val;
+        };
+        window.clearCalc = () => document.getElementById('calc-display').value = '';
+        window.backspace = () => {
+            const disp = document.getElementById('calc-display');
+            disp.value = disp.value.slice(0, -1);
+        };
+    </script>
 </body>
 </html>

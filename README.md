@@ -1,154 +1,117 @@
-# Nexus Compute RS: Dual-Runtime R&D Architecture
+# Rusty Pad: Dual-Runtime Efficiency Proof of Concept
 
-![Build Status](https://github.com/Funmatu/nx-compute-rs/actions/workflows/deploy.yml/badge.svg)
-![Rust](https://img.shields.io/badge/Language-Rust-orange.svg)
-![Platform](https://img.shields.io/badge/Platform-WASM%20%7C%20Python-blue.svg)
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+![Rust](https://img.shields.io/badge/Core-Rust-orange)
+![WASM](https://img.shields.io/badge/Target-WebAssembly-blue)
+![Python](https://img.shields.io/badge/Target-Python-yellow)
 
-**Nexus Compute RS** is a rigorous proof-of-concept template designed for R&D in Physical AI and Robotics. It implements a "Write Once, Run Everywhere" strategy for high-performance algorithms, bridging the gap between web-based visualization/sharing and Python-based rigorous analysis/backend processing.
+**Rusty Pad** is a minimalistic implementation of a notepad and calculator, designed as an antithesis to modern, bloated software. It demonstrates a rigorous "Write Once, Run Everywhere" architecture where high-performance Rust logic powers both a Web Interface (via WASM) and a Python Analysis Environment (via PyO3).
 
-## 1. Architectural Philosophy
+## 1. Philosophical Architecture
 
-In modern R&D, we often face a dilemma:
-* **Python** is required for data analysis, ML integration (PyTorch), and ROS2 interfacing.
-* **Web (JavaScript)** is required for easy sharing, visualization, and zero-setup demos.
-* **Performance** is critical for SLAM, Optimization, and Simulation.
+Modern text editors often consume hundreds of megabytes just to display text, primarily due to abstraction overhead (Electron, JVM, etc.). While a browser-based app cannot fully escape the browser's memory footprint, **Rusty Pad** minimizes logical overhead by adhering to the following principles:
 
-This project solves this by implementing the core logic in **Rust**, which is then compiled into two distinct targets via Feature Flags:
+1.  **Logic Separation:** All computational logic (math evaluation, text statistics) is strictly implemented in **Rust**.
+2.  **Zero-Cost Abstraction:** The UI (HTML/JS) acts merely as a thin presentation layer. It performs no heavy calculations.
+3.  **Memory Safety:** Rust's ownership model ensures no memory leaks occur within the core logic, a common issue in long-running JS applications.
 
 ```mermaid
 graph TD
-    subgraph "Core Logic (Rust)"
-        Alg[Algorithm / Physics / Math]
+    User[User Input]
+    
+    subgraph Browser
+        UI[HTML/JS Interface]
+        WASM["Rust Logic (WASM)"]
+        UI -->|Input String| WASM
+        WASM -->|Result/Stats| UI
     end
+    
+    subgraph Python_Env
+        Script[Analysis Script]
+        Native["Rust Logic (Native Lib)"]
+        Script -->|Batch Process| Native
+    end
+    
+    User --> UI
+    User --> Script
 
-    subgraph "Target: Web (WASM)"
-        WB[wasm-bindgen]
-        JS[JavaScript / Browser]
-        Alg --> WB --> JS
-    end
-
-    subgraph "Target: Python (Native)"
-        PyO3[PyO3 Bindings]
-        Py[Python Environment]
-        Alg --> PyO3 --> Py
-    end
 ```
 
-## 2. Project Structure
+## 2. Features
 
-```text
-nx-compute-rs/
-├── .github/workflows/   # CI/CD for automatic WASM deployment & Python testing
-├── src/
-│   └── lib.rs           # The SINGLE source of truth. Contains core logic + bindings.
-├── www/                 # The Web Frontend (HTML/JS)
-│   ├── index.html
-│   ├── index.js
-│   └── pkg/             # Generated WASM artifacts (by CI)
-├── Cargo.toml           # Rust configuration (defines 'wasm' and 'python' features)
-├── pyproject.toml       # Python build configuration (Maturin)
-└── README.md            # This document
-```
+### A. The Notepad
 
-## 3. Usage Guide
+* **Minimal Interface:** Distraction-free typing area.
+* **Rust-Powered Analytics:** Real-time character, word, and line counting performed by Rust (compiled to WASM).
+* **Local Processing:** Data never leaves your device. Save functionality generates blobs locally.
 
-### A. As a Python Library (For Analysis/Backend)
+### B. The Calculator
 
-You can use the Rust core as a native Python extension. This provides near-C++ performance within your Python scripts.
+* **Programmer Mode:** Supports complex expressions like `sqrt(2) * (1 + sin(30))`.
+* **Unified Logic:** The exact same calculation engine is used in the Web UI and the Python backend, guaranteeing consistent results across environments.
 
-**Prerequisites:**
-* Rust toolchain (`rustup`)
+## 3. Setup & Installation
+
+### Prerequisites
+
+* Rust Toolchain (`rustup`, `cargo`)
 * Python 3.8+
-* `pip install maturin`
+* `wasm-pack`: `curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh`
+* `maturin` (for Python): `pip install maturin`
 
-**Setup & Run:**
+### A. Building for Web (WASM)
+
+To generate the web artifacts:
+
 ```bash
-# 1. Build and install into current venv
-maturin develop --release --features python
-
-# 2. Run in Python
-python -c "import nx_compute_rs; print(nx_compute_rs.compute_metrics(10000000, 1.5))"
-# python -c "import numpy as np; i = np.arange(10000000); x = i * np.pi / 180.0 * 1.5; print(np.sum(np.sin(x) * np.cos(x)))"
-# python -m timeit -s "import nx_compute_rs" "nx_compute_rs.compute_metrics(10000000, 1.5)"
-# python -m timeit -s "import numpy as np" "i = np.arange(10000000); x = i * np.pi / 180.0 * 1.5; np.sum(np.sin(x) * np.cos(x))"
-```
-
-## Optional: Paralell vs Serial vs NumPy
-```bash
-python -c "
-import nx_compute_rs
-import numpy as np
-import timeit
-
-# 1. Rust Serial (直列)
-t_serial = timeit.timeit(
-    'nx_compute_rs.compute_metrics(10000000, 1.5, False)', 
-    setup='import nx_compute_rs', 
-    number=10
-)
-
-# 2. Rust Parallel (並列)
-t_parallel = timeit.timeit(
-    'nx_compute_rs.compute_metrics(10000000, 1.5, True)', 
-    setup='import nx_compute_rs', 
-    number=10
-)
-
-# 3. NumPy (ベクトル化)
-t_numpy = timeit.timeit(
-    'x = np.arange(10000000) * np.pi / 180.0 * 1.5; np.sum(np.sin(x) * np.cos(x))', 
-    setup='import numpy as np', 
-    number=10
-)
-
-print(f'Rust (Serial):   {t_serial/10*1000:.2f} ms')
-print(f'Rust (Parallel): {t_parallel/10*1000:.2f} ms')
-print(f'NumPy:           {t_numpy/10*1000:.2f} ms')
-"
-```
-
-### B. As a Web Application (For Demo/Sharing)
-
-You can run the same logic in the browser via WebAssembly.
-
-**Prerequisites:**
-* `wasm-pack` (`curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh`)
-
-**Setup & Run:**
-```bash
-# 1. Build WASM blob
+# Build with 'wasm' feature enabled, optimized for size
 wasm-pack build --target web --out-dir www/pkg --no-default-features --features wasm
 
-# 2. Serve locally (using Python's http server for simplicity)
+# Serve locally
 cd www
 python3 -m http.server 8000
-# Open http://localhost:8000
+# Visit http://localhost:8000
+
 ```
 
-## 4. Technical Details
+### B. Building for Python
 
-### Feature Flags Strategy
-We use `Cargo.toml` features to minimize binary size and dependencies.
-* **`features = ["wasm"]`**: Includes `wasm-bindgen`. Generates `.wasm` binary. Panics happen in JS console.
-* **`features = ["python"]`**: Includes `pyo3`. Generates `.so/.pyd` shared library. Python exception handling enabled.
+To use the core logic in Python scripts:
 
-### Performance Considerations
-* **Zero-Cost Abstraction:** Rust's iterators and logic compile down to optimized machine code (simd instructions where applicable) for Python, and optimized bytecode for WASM.
-* **Memory Safety:** No manual memory management (malloc/free) required, preventing segfaults in Python extensions.
-* **GIL (Global Interpreter Lock):** The Rust code runs outside Python's GIL. For multi-threaded logic, Rust can utilize all CPU cores while Python is blocked, offering true parallelism.
+```bash
+# Build and install into current virtual environment
+maturin develop --release --features python
 
-## 5. Deployment
+# Run verification
+python test_script.py
 
-This repository uses **GitHub Actions** to automatically deploy the Web version.
-1.  Push to `main`.
-2.  Action triggers: Compiles Rust to WASM.
-3.  Deploys `www/` folder to **GitHub Pages**.
+```
 
-## 6. Future Roadmap
+## 4. Technical Deep Dive
 
-* **GPU Acceleration:** Integrate `wgpu` for portable GPU compute shaders (WebGPU + Vulkan/Metal).
-* **Serialization:** Add `serde` support to pass complex JSON/Structs between JS/Python and Rust.
-* **Sim2Real:** Port the Python bindings directly to a ROS2 node.
+### Why `meval` for Math?
 
----
-*Author: Funmatu*
+We chose the `meval` crate for expression parsing. It provides a distinct advantage over JavaScript's `eval()`:
+
+* **Security:** It does not execute arbitrary code, only mathematical expressions.
+* **Determinism:** Floating-point operations are handled by Rust's strict adherence to IEEE 754, avoiding some JS-specific quirks.
+
+### Memory Profile
+
+While the browser container introduces base overhead, the WASM module itself is extremely compact (typically <100KB gzipped). The text buffer statistics are computed by passing a pointer to the WASM linear memory, minimizing GC pressure on the JS side compared to pure JS implementations that might create many intermediate string objects.
+
+## 5. Directory Structure
+
+```
+rusty-pad/
+├── src/
+│   └── lib.rs           # Single Source of Truth (Core Logic)
+├── www/
+│   ├── index.html       # Minimalist UI
+│   ├── index.js         # WASM Glue Code
+│   └── pkg/             # Generated WASM (ignored by git)
+├── Cargo.toml           # Defines features (wasm vs python)
+├── test_script.py       # Python integration test
+└── README.md            # Documentation
+
+```

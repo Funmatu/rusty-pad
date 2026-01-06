@@ -1,32 +1,25 @@
-use std::f64::consts::PI;
+// -----------------------------------------------------------------------------
+// Core Logic (Pure Rust)
+// -----------------------------------------------------------------------------
 
-// Rayonのプレリュード（並列化用ツール）をインポート
-#[cfg(not(target_family = "wasm"))]
-use rayon::prelude::*;
-
-/// Core Algorithm
-/// use_parallel: trueなら並列化（Nativeのみ有効）、falseなら直列
-fn core_algorithm(iterations: u64, param: f64, use_parallel: bool) -> f64 {
-    // 【Native (Python) かつ Parallel ON の場合】
-    #[cfg(not(target_family = "wasm"))]
-    if use_parallel {
-        return (0..iterations)
-            .into_par_iter() // <--- ここが魔法！ par_iterにするだけ
-            .map(|i| {
-                let x = (i as f64) * PI / 180.0;
-                (x * param).sin() * (x * param).cos()
-            })
-            .sum();
+/// 数式文字列を受け取り、計算結果を文字列で返す
+/// fend-core は単位や通貨も扱えるため、結果は f64 ではなく String となる
+fn core_calculate(expression: &str) -> String {
+    let mut context = fend_core::Context::new();
+    // fend_core::evaluate は Result を返すが、Err の場合もエラーメッセージを含んだ Ok に近い挙動をする場合があるため
+    // 単純に main_result を取得する
+    match fend_core::evaluate(expression, &mut context) {
+        Ok(res) => res.get_main_result().to_string(),
+        Err(e) => format!("Error: {}", e),
     }
+}
 
-    // 【WASM または Parallel OFF の場合】
-    (0..iterations)
-        .into_iter() // 通常のイテレータ
-        .map(|i| {
-            let x = (i as f64) * PI / 180.0;
-            (x * param).sin() * (x * param).cos()
-        })
-        .sum()
+/// テキストの統計情報を計算する (変更なし)
+fn core_text_stats(text: &str) -> (usize, usize, usize) {
+    let chars = text.chars().count();
+    let words = text.split_whitespace().count();
+    let lines = text.lines().count();
+    (chars, words, lines)
 }
 
 // -----------------------------------------------------------------------------
@@ -37,15 +30,22 @@ use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
 #[pyfunction]
-// 引数に parallel を追加
-fn compute_metrics(iterations: u64, param: f64, parallel: bool) -> PyResult<f64> {
-    Ok(core_algorithm(iterations, param, parallel))
+// fend-core の仕様に合わせて戻り値を String に変更
+fn calculate(expression: String) -> PyResult<String> {
+    Ok(core_calculate(&expression))
+}
+
+#[cfg(feature = "python")]
+#[pyfunction]
+fn get_text_stats(text: String) -> PyResult<(usize, usize, usize)> {
+    Ok(core_text_stats(&text))
 }
 
 #[cfg(feature = "python")]
 #[pymodule]
-fn nx_compute_rs(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(compute_metrics, m)?)?;
+fn rusty_pad(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(calculate, m)?)?;
+    m.add_function(wrap_pyfunction!(get_text_stats, m)?)?;
     Ok(())
 }
 
@@ -57,7 +57,21 @@ use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
-// 引数に parallel を追加 (WASMでは内部で無視されるがIFは合わせる)
-pub fn compute_metrics_js(iterations: u64, param: f64, parallel: bool) -> f64 {
-    core_algorithm(iterations, param, parallel)
+pub fn wasm_calculate(expression: &str) -> String {
+    core_calculate(expression)
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub struct TextStats {
+    pub chars: usize,
+    pub words: usize,
+    pub lines: usize,
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn wasm_text_stats(text: &str) -> TextStats {
+    let (c, w, l) = core_text_stats(text);
+    TextStats { chars: c, words: w, lines: l }
 }

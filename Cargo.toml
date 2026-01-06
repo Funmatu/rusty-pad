@@ -1,12 +1,15 @@
 [package]
-name = "nx-compute-rs"
+name = "rusty-pad"
 version = "0.1.0"
 edition = "2021"
-authors = ["R&D Researcher <your.email@example.com>"]
-description = "A dual-runtime computation core for WebAssembly and Python, powered by Rust."
+authors = ["Efficiency Enthusiast funmatu@gmail.com"]
+description = "A lightweight, memory-conscious notepad and calculator powered by Rust/WASM."
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
 
 [lib]
-name = "nx_compute_rs"
+name = "rusty_pad"
 crate-type = ["cdylib"]
 
 [features]
@@ -15,8 +18,8 @@ wasm = ["dep:wasm-bindgen"]
 python = ["dep:pyo3"]
 
 [dependencies]
-# Common dependencies (Math, etc.)
-serde = { version = "1.0", features = ["derive"] }
+# 数式評価用ライブラリ
+fend-core = "1.5"
 
 # Feature: WebAssembly
 wasm-bindgen = { version = "0.2", optional = true }
@@ -24,9 +27,8 @@ wasm-bindgen = { version = "0.2", optional = true }
 # Feature: Python
 pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
 
-rayon = "1.10"
-
 [profile.release]
 lto = true
-opt-level = 3
+opt-level = "z"  # バイナリサイズを最小化 (Webロード時間を短縮)
 codegen-units = 1
+strip = true

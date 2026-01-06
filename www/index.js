@@ -1,28 +1,59 @@
-import init, { compute_metrics_js } from './pkg/nx_compute_rs.js';
+import init, { wasm_calculate, wasm_text_stats } from './pkg/rusty_pad.js';
 
+const notepad = document.getElementById('notepad');
+const statusBar = document.getElementById('status-bar');
+const calcDisplay = document.getElementById('calc-display');
+
+// Initialize WASM
 async function run() {
-    await init(); // Initialize WASM
+    await init();
+    statusBar.innerText = "Rust Core Loaded. Ready.";
     
-    const btn = document.getElementById('run-btn');
-    const output = document.getElementById('output');
+    // Notepad Event Listeners
+    notepad.addEventListener('input', updateStats);
     
-    btn.innerText = "Run Core Algorithm (10M iters)";
-    btn.disabled = false;
-
-    btn.addEventListener('click', () => {
-        output.innerText = "Computing...";
-        
-        // Use setTimeout to allow UI to update before blocking main thread
-        setTimeout(() => {
-            const start = performance.now();
-            
-            // Call Rust function
-            const result = compute_metrics_js(10_000_000n, 1.5);
-            
-            const end = performance.now();
-            output.innerText = `Result: ${result.toFixed(6)}\nTime: ${(end - start).toFixed(2)} ms`;
-        }, 10);
+    // Calculator Event Listener (Enter key)
+    document.addEventListener('keydown', (e) => {
+        if (document.activeElement !== notepad) {
+            if (e.key === 'Enter') window.compute();
+            if (e.key === 'Escape') window.clearCalc();
+        }
     });
+}
+
+// Update Notepad Stats using Rust
+function updateStats() {
+    const text = notepad.value;
+    // Rust側で高速に集計
+    const stats = wasm_text_stats(text);
+    statusBar.innerText = `Chars: ${stats.chars} | Words: ${stats.words} | Lines: ${stats.lines} | Mem: Efficient`;
+}
+
+// Calculator Logic calling Rust
+window.compute = () => {
+    const expr = calcDisplay.value;
+    try {
+        const result = wasm_calculate(expr);
+        calcDisplay.value = result;
+    } catch (e) {
+        calcDisplay.value = "Error";
+    }
+};
+
+// File Save Logic (Native JS for IO)
+window.saveFile = () => {
+    const text = notepad.value;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'note.txt';
+    a.click();
+    URL.revokeObjectURL(a.href);
+};
+
+window.clearPad = () => {
+    notepad.value = "";
+    updateStats();
 }
 
 run();
