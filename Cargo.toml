@@ -14,6 +14,8 @@ python = ["dep:pyo3"]
 
 [dependencies]
 fend-core = "1.5"
+chrono = "0.4"
+regex = "1"
 
 # --- Python用 ---
 pyo3 = { version = "0.20", features = ["extension-module"], optional = true }

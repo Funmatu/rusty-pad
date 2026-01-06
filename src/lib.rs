@@ -1,9 +1,11 @@
 use std::io::{self, BufRead, Write};
 use std::fs::File;
 use fend_core;
+use regex::Regex;
+use chrono::{NaiveDate, Datelike}; 
 
 // -----------------------------------------------------------------------------
-// Core Logic: Pure Rust
+// Core Logic: Pure Rust (Stats, Search, I/O)
 // -----------------------------------------------------------------------------
 
 fn core_text_stats(text: &str) -> (usize, usize, usize) {
@@ -56,10 +58,6 @@ fn core_read_lines(path: &str, start_line: usize, num_lines: usize) -> Result<St
     Ok(result)
 }
 
-// -----------------------------------------------------------------------------
-// Search Features
-// -----------------------------------------------------------------------------
-
 fn core_search_next(path: &str, query: &str, start_line: usize) -> Result<Option<usize>, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let reader = io::BufReader::new(file);
@@ -95,9 +93,6 @@ fn core_search_prev(path: &str, query: &str, start_line: usize) -> Result<Option
     Ok(last_match)
 }
 
-// ✅ 修正: 開始行(start_line)と終了行(end_line)を直接受け取る仕様に変更
-// end_lineは「そこまで含める」のではなく「ここまで来たら終了(Exclusive)」とするのが一般的だが、
-// 呼び出し元で調整済みとする。ここでは `index >= end_line` でbreakする。
 fn core_save_range(src_path: &str, dest_path: &str, start_line: usize, end_line: usize) -> Result<usize, String> {
     let src_file = File::open(src_path).map_err(|e| e.to_string())?;
     let reader = io::BufReader::new(src_file);
@@ -108,10 +103,7 @@ fn core_save_range(src_path: &str, dest_path: &str, start_line: usize, end_line:
     let mut lines_written = 0;
 
     for (index, line) in reader.lines().enumerate() {
-        // end_lineに達したら終了
-        if index >= end_line {
-            break;
-        }
+        if index >= end_line { break; }
         
         if index >= start_line {
             let line = line.map_err(|e| e.to_string())?;
@@ -125,6 +117,107 @@ fn core_save_range(src_path: &str, dest_path: &str, start_line: usize, end_line:
 }
 
 // -----------------------------------------------------------------------------
+// Helper: Smart Date Logic (Chrono)
+// -----------------------------------------------------------------------------
+
+/// 正確なカレンダー計算を行うヘルパー
+/// Chronoを使って「月」や「年」を加算し、存在しない日（2/30など）は月末に丸める
+fn add_date_parts(base: NaiveDate, val: i32, unit: &str) -> Option<NaiveDate> {
+    let mut y = base.year();
+    let mut m = base.month();
+    let mut d = base.day();
+
+    match unit {
+        "year" | "years" => {
+            y += val;
+        },
+        "month" | "months" => {
+            // 月の計算（年またぎ対応）
+            let total_months = y * 12 + (m as i32 - 1) + val;
+            y = total_months / 12;
+            m = (total_months % 12 + 1) as u32;
+        },
+        _ => return None,
+    }
+
+    // 存在しない日付の調整 (例: 1/31 + 1 month -> 2/28 or 2/29)
+    // chronoの with_ymd_opt は無効な日付だとNoneを返すので、有効になるまで日を減らす
+    let mut new_date = NaiveDate::from_ymd_opt(y, m, d);
+    while new_date.is_none() && d > 28 {
+        d -= 1;
+        new_date = NaiveDate::from_ymd_opt(y, m, d);
+    }
+    new_date
+}
+
+fn apply_input_patches(expression: &str, date_str: &str) -> String {
+    // 1. 基本置換 (today, now, date -> @YYYY-MM-DD)
+    let mut expr = expression
+        .replace("date", date_str)
+        .replace("today", date_str)
+        .replace("now", date_str); // 時刻非対応のため、nowも日付のみに置換
+
+    // 2. Week置換 (1 week = 7 days は定義として不変なので単純置換でOK)
+    let re_week = Regex::new(r"(\d+)\s*weeks?").unwrap();
+    expr = re_week.replace_all(&expr, "$1 * 7 days").to_string();
+
+    // 3. 正確な Year/Month 計算 (Regex + Chrono)
+    // パターン: @YYYY-MM-DD +/- N years/months
+    // 連続計算 (today + 1 year + 1 month) に対応するため、マッチしなくなるまでループする
+    let re_calc = Regex::new(r"(@\d{4}-\d{2}-\d{2})\s*([+\-])\s*(\d+)\s*(years?|months?)").unwrap();
+    
+    // ループ制限（無限ループ防止）
+    for _ in 0..10 {
+        if !re_calc.is_match(&expr) {
+            break;
+        }
+        
+        // replace_all で一括置換
+        expr = re_calc.replace_all(&expr, |caps: &regex::Captures| {
+            let base_str = &caps[1][1..]; // @を除く
+            let op = &caps[2];
+            let val_str = &caps[3];
+            let unit = &caps[4];
+
+            if let (Ok(base_date), Ok(val)) = (
+                NaiveDate::parse_from_str(base_str, "%Y-%m-%d"),
+                val_str.parse::<i32>()
+            ) {
+                // 引き算なら値を負にする
+                let signed_val = if op == "-" { -val } else { val };
+                
+                if let Some(new_date) = add_date_parts(base_date, signed_val, unit) {
+                    // 計算結果を新しいリテラルに置換: @YYYY-MM-DD
+                    return format!("@{}", new_date.format("%Y-%m-%d"));
+                }
+            }
+            // パース失敗などは元の文字列を維持
+            caps[0].to_string()
+        }).to_string();
+    }
+
+    // 4. 日付同士の引き算 (@YYYY-MM-DD - @YYYY-MM-DD)
+    let re_sub = Regex::new(r"(@\d{4}-\d{2}-\d{2})\s*-\s*(@\d{4}-\d{2}-\d{2})").unwrap();
+    if re_sub.is_match(&expr) {
+        expr = re_sub.replace_all(&expr, |caps: &regex::Captures| {
+            let d1_str = &caps[1][1..]; 
+            let d2_str = &caps[2][1..]; 
+            if let (Ok(d1), Ok(d2)) = (
+                NaiveDate::parse_from_str(d1_str, "%Y-%m-%d"),
+                NaiveDate::parse_from_str(d2_str, "%Y-%m-%d")
+            ) {
+                let diff = d1.signed_duration_since(d2);
+                format!("{} days", diff.num_days())
+            } else {
+                caps[0].to_string()
+            }
+        }).to_string();
+    }
+
+    expr
+}
+
+// -----------------------------------------------------------------------------
 // Python Interface (PyO3)
 // -----------------------------------------------------------------------------
 #[cfg(feature = "python")]
@@ -133,8 +226,15 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 #[pyfunction]
 fn calculate(expression: String) -> PyResult<String> {
+    use chrono::Local;
+    
+    let now = Local::now();
+    let date_str = now.format("@%Y-%m-%d").to_string();
+    
+    let expr_processed = apply_input_patches(&expression, &date_str);
+
     let mut context = fend_core::Context::new();
-    match fend_core::evaluate(&expression, &mut context) {
+    match fend_core::evaluate(&expr_processed, &mut context) {
         Ok(res) => Ok(res.get_main_result().to_string()),
         Err(e) => Ok(format!("Error: {}", e)),
     }
@@ -170,7 +270,6 @@ fn search_prev(path: String, query: String, start_line: usize) -> PyResult<Optio
     core_search_prev(&path, &query, start_line).map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e))
 }
 
-// ✅ 修正: 引数を start_line, end_line に変更
 #[cfg(feature = "python")]
 #[pyfunction]
 fn save_range(src_path: String, dest_path: String, start_line: usize, end_line: usize) -> PyResult<usize> {
@@ -208,9 +307,19 @@ impl RustySession {
     pub fn new() -> Self {
         RustySession { ctx: fend_core::Context::new() }
     }
+    
     pub fn evaluate(&mut self, expression: &str) -> String {
         if expression.trim().is_empty() { return String::new(); }
-        match fend_core::evaluate(expression, &mut self.ctx) {
+
+        let date = js_sys::Date::new_0();
+        let y = date.get_full_year();
+        let m = date.get_month() + 1; 
+        let d = date.get_date();
+        let date_str = format!("@{}-{:02}-{:02}", y, m as u8, d as u8);
+        
+        let expr_processed = apply_input_patches(expression, &date_str);
+
+        match fend_core::evaluate(&expr_processed, &mut self.ctx) {
             Ok(res) => res.get_main_result().to_string(),
             Err(e) => format!("Error: {}", e),
         }
